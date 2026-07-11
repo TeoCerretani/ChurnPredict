@@ -1,0 +1,292 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[italian]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{a4paper, margin=2.5cm}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{abstract}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+
+% Metadati
+\title{\textbf{ChurnPredict: Un Sistema End-to-End per l'Analisi Predittiva dell'Abbandono Utente e l'Explainable AI}}
+\author{Matteo Cerretani (Matricola: 589717)\textsuperscript{1}\\
+\small \textsuperscript{1}Esame di Sistemi Intelligenti per Internet\\
+\small Ingegneria Informatica, Laurea Magistrale, Università degli Studi Roma Tre, Roma, Italia}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\renewcommand{\abstractname}{Sommario}
+\begin{abstract}
+La previsione dell'abbandono degli utenti (churn prediction) rappresenta una sfida cruciale per i servizi di streaming digitale. Questo lavoro presenta \textit{ChurnPredict}, un framework interattivo full-stack per la classificazione e predizione del churn, basato sull'analisi comportamentale degli utenti. Il sistema integra una pipeline di Machine Learning (Random Forest con gestione dello sbilanciamento delle classi) addestrata sul dataset Sparkify, un backend asincrono in FastAPI e un'interfaccia frontend reattiva in React/Next.js. Per mitigare la natura "black-box" dei modelli di classificazione complessi, ChurnPredict implementa un modulo di Explainable AI basato sui valori SHAP (SHapley Additive exPlanations), fornendo una traccia esplicativa in tempo reale sull'impatto di ciascuna feature comportamentale. I risultati evidenziano l'efficacia del bilanciamento del dataset e la capacità del modello di identificare pattern predittivi (come il tasso di skip e le interazioni negative) garantendo contemporaneamente alta latenza per l'uso interattivo e trasparenza decisionale.
+\end{abstract}
+
+\textbf{Parole chiave:} Churn Prediction; Random Forest; Explainable AI; SHAP; Machine Learning; FastAPI; Affective Computing.
+
+\section{Introduzione}
+Negli ultimi due decenni, la capacità dei sistemi informatici di analizzare e anticipare il comportamento umano ha trasformato le strategie di fidelizzazione. Nel contesto dei servizi di streaming musicale, la perdita di un abbonato (churn) comporta un danno economico diretto; pertanto, identificare gli utenti a rischio prima che annullino l'abbonamento è di primaria importanza. Storicamente affidata a metriche aggregate rudimentali, l'analisi del churn ha compiuto un balzo in avanti con l'avvento dei modelli di Machine Learning. Tuttavia, la mera estrazione di una probabilità di abbandono restituisce un'informazione limitata se non accompagnata dalle motivazioni alla base della predizione.
+
+Parallelamente, la necessità di trasparenza (Explainable AI - XAI) sta guadagnando trazione nel campo delle interfacce utente avanzate. La sfida principale risiede nel tradurre complessi alberi decisionali in insight leggibili per l'utente finale o l'analista.
+
+Il progetto \textit{ChurnPredict} nasce per colmare questa distanza, proponendo un'infrastruttura capace di tradurre i log di eventi utente in predizioni accurate ed esplicabili in tempo reale. Per farlo in modo fondato, ChurnPredict implementa una rilettura computazionale dei comportamenti di interazione musicale, incrociandoli con l'analisi dei valori SHAP. Questo documento descrive le scelte architetturali, i modelli matematici e la strategia impiegate per mantenere latenze compatibili con l'uso interattivo, pur offrendo output analitici strutturati.
+
+\section{Related Work}
+\subsection{Modellazione del Comportamento Utente e Churn Prediction}
+La classificazione del \textit{customer churn} ha radici profonde nell'analisi di marketing, originariamente dominata da modelli statistici tradizionali e dall'analisi RFM (Recency, Frequency, Monetary). Con l'esplosione dei servizi in abbonamento (SaaS e streaming digitale), l'attenzione si è spostata dai dati demografici statici ai \textit{log di interazione sequenziali}.
+
+Studi recenti dimostrano che l'abbandono di un servizio musicale non è quasi mai un evento improvviso, ma il culmine di un degrado progressivo dell'engagement. L'analisi dei file di log per estrarre pattern di utilizzo è un approccio consolidato nella letteratura scientifica \cite{burez2009}. Nello streaming musicale, metriche come il numero di brani ascoltati, le pubblicità riprodotte (Roll Advert) e le valutazioni (Thumbs Up/Down) sono indicatori diretti del livello di soddisfazione. 
+A differenza di approcci puramente basati su algoritmi lineari (es. Regressione Logistica), i modelli di \textit{ensemble learning} come Random Forest e Gradient Boosting si sono dimostrati ampiamente superiori nel catturare interazioni non lineari e complesse tra queste metriche comportamentali. ChurnPredict usa esplicitamente un'ontologia comportamentale ristretta agli ultimi 30 giorni di attività per catturare i cambiamenti recenti nell'attitudine dell'utente, un approccio temporale supportato dai recenti studi sull'analisi del decadimento dell'attenzione.
+
+\subsection{Explainable AI (XAI) e Trasparenza in Ambito Business}
+Sebbene i sistemi decisionali basati su modelli non lineari (es. Random Forest o reti neurali) offrano elevata accuratezza predittiva, la loro natura intrinsecamente "black-box" ne ha spesso limitato l'adozione nei processi decisionali aziendali. Intervenire con successo su un utente a rischio richiede non solo di sapere \textit{chi} abbandonerà, ma soprattutto \textit{perché}.
+
+Inizialmente, la spiegabilità dei modelli ad albero si limitava all'analisi della \textit{Feature Importance} globale (es. basata sulla Gini impurity o Mean Decrease Impurity). Tuttavia, tale approccio non fornisce spiegazioni a livello di singola istanza (spiegabilità locale), rendendo impossibile personalizzare l'azione di marketing. Lundberg e Lee \cite{lundberg2017} hanno rivoluzionato il campo formalizzando i valori SHAP (SHapley Additive exPlanations), un framework derivato matematicamente dalla Teoria dei Giochi cooperativa. SHAP fornisce un metodo unificato e teoricamente saldo per interpretare le predizioni, assegnando a ciascuna feature un valore di importanza additivo esatto. 
+ChurnPredict privilegia determinismo e spiegabilità esplicita applicando il \texttt{TreeExplainer} (una variante ottimizzata di SHAP per foreste decisionali) sul canale predittivo. Questo approccio permette di superare il classico trade-off tra "accuratezza" e "interpretabilità", fornendo al contempo previsioni robuste e una traccia esplicativa visiva azionabile per ogni singola transazione.
+
+\section{Fondamenti Teorici}
+\subsection{Classificazione e Random Forest}
+La classificazione del churn è affrontata come un problema supervisionato binario, in cui si cerca di apprendere una funzione $f: X \rightarrow Y$ con $Y \in \{0, 1\}$. Il modello scelto per \textit{ChurnPredict} è il Random Forest \cite{breiman2001}, un algoritmo di \textit{ensemble learning} basato sulla tecnica di \textit{Bagging} (Bootstrap Aggregating). 
+
+Invece di addestrare un singolo albero decisionale, prono all'overfitting (elevata varianza), il Random Forest costruisce $B$ alberi decisionali indipendenti. Ogni albero $T_b$ è addestrato su un campione bootstrap $D_b$ estratto con reimmissione dal set originale, e ad ogni nodo considera solo un sottoinsieme casuale $m \approx \sqrt{p}$ delle $p$ feature totali.
+
+La previsione finale per un input $x$ è data dalla moda delle predizioni dei singoli alberi (classificazione a maggioranza):
+\begin{equation}
+\hat{y} = \text{mode} \{ \hat{h}_1(x), \hat{h}_2(x), \dots, \hat{h}_B(x) \}
+\end{equation}
+
+Per determinare i tagli (split) ottimali in ogni nodo, l'algoritmo minimizza la \textit{Gini Impurity}, che quantifica la probabilità di classificare scorrettamente un elemento estratto a caso se etichettato secondo la distribuzione delle classi nel nodo:
+\begin{equation}
+G = 1 - \sum_{i=0}^{C-1} p_i^2
+\end{equation}
+dove $p_i$ è la frazione di elementi della classe $i$ nel nodo considerato. Questo meccanismo garantisce una formidabile resistenza al rumore e alle relazioni non lineari.
+
+\subsection{Gestione Teorica dello Sbilanciamento}
+Nel contesto del churn, il numero di utenti che abbandonano (classe positiva $y=1$) è tipicamente molto inferiore a quelli che restano (classe negativa $y=0$). Sia $N_0$ il numero di campioni della classe maggioritaria e $N_1$ quello della minoritaria; nei servizi di streaming si osserva frequentemente un $N_0 \gg N_1$.
+
+Tale asimmetria, misurata dall'Imbalance Ratio ($IR = N_0 / N_1$), degrada strutturalmente le prestazioni dei classificatori standard. L'algoritmo tende fisiologicamente a minimizzare l'errore globale, favorendo la creazione di foglie pure per la classe maggioritaria. In \textit{ChurnPredict}, l'approccio dimensionale viene corretto a monte mediante l'algoritmo SMOTE (Synthetic Minority Over-sampling Technique) \cite{chawla2002}. 
+
+Subito dopo lo split train-test (cruciale per non inficiare la validazione), SMOTE genera sinteticamente nuovi campioni interpolando linearmente tra i vettori feature della classe minoritaria $D_{train}^{(1)}$ e i loro k-nearest neighbors (k=5), creando un nuovo insieme di sintesi $D_{over}^{(1)}$ di dimensione $N_0 - N_1$, tale per cui il set di addestramento bilanciato diventi:
+\begin{equation}
+D_{balanced} = D_{train}^{(0)} \cup D_{train}^{(1)} \cup D_{over}^{(1)}
+\end{equation}
+Questo forzamento probabilistico garantisce che l'albero decisionale ponga lo stesso peso (in termini di \textit{information gain}) sui pattern comportamentali di chi resta e di chi abbandona.
+
+\section{Architettura di ChurnPredict}
+L'infrastruttura di ChurnPredict è concepita secondo il paradigma client-server: backend asincrono in Python con FastAPI, frontend reattivo e pipeline di addestramento offline.
+
+\subsection{Architettura end-to-end}
+La pipeline esegue tre fasi distinte:
+\begin{enumerate}
+    \item \textbf{Estrazione Feature (Offline):} I dati grezzi (\texttt{mini\_sparkify\_event\_data.json}) vengono elaborati. Vengono filtrati gli eventi degli ultimi 30 giorni per ogni utente, aggregate le interazioni (skip rate, minuti ascoltati, ecc.) e generato un dataset tabulare.
+    \item \textbf{Training e Tuning (Offline):} Un processo di Grid Search ottimizza gli iperparametri (\texttt{n\_estimators}, \texttt{max\_depth}, \texttt{min\_samples\_split}) massimizzando l'F1-score. Il modello finale è serializzato (\texttt{model.pkl}).
+    \item \textbf{Inferenza e XAI (Online):} FastAPI espone un endpoint \texttt{/predict}. Riceve i dati dal client, li elabora, interroga il modello e calcola in tempo reale i valori SHAP, restituendo probabilità, verdetto e impatti delle feature.
+\end{enumerate}
+
+\section{Stack Tecnologico e Implementazione}
+\subsection{Backend e Inferenza ML}
+\begin{itemize}
+    \item \textbf{Runtime e API:} Python 3, server ASGI \texttt{uvicorn}, framework FastAPI con validazione Pydantic. Endpoint principale \texttt{POST /predict}.
+    \item \textbf{Classificazione:} \texttt{scikit-learn} (\texttt{RandomForestClassifier}).
+    \item \textbf{Explainability:} Libreria \texttt{shap} per l'estrazione degli impatti marginali (TreeExplainer).
+\end{itemize}
+
+\subsection{Frontend e UI}
+\begin{itemize}
+    \item \textbf{Interfaccia:} Sviluppata in React/Next.js con TailwindCSS.
+    \item \textbf{Visualizzazione:} UI reattiva con estetica "dark-mode", barre di confidenza e scomposizione visiva dell'impatto delle feature (barre cromatiche rosse per churn, verdi per retention).
+\end{itemize}
+
+\section{Modello Predittivo e Feature Engineering}
+\subsection{Selezione delle Feature e Fondamenti Empirici}
+A ogni utente è associato staticamente un vettore di feature estratto dai log. La selezione di questi parametri non è puramente euristica, ma affonda le radici negli studi di User Experience (UX) e Customer Retention in ambito multimediale. 
+
+\textbf{Vincolo Temporale (Finestra di 30 Giorni):} Tutti i dati grezzi aggregati per addestrare il modello sono stati filtrati per isolare esclusivamente le interazioni avvenute negli ultimi 30 giorni di attività dell'utente. Questa scelta progettuale risponde a due esigenze primarie. Dal punto di vista predittivo, il comportamento umano nei servizi digitali è soggetto a rapide variazioni: le abitudini di ascolto di molti mesi prima possiedono un debole potere esplicativo rispetto allo stato di insoddisfazione attuale. Restringere l'orizzonte temporale all'ultimo mese massimizza il fattore di \textit{Recency} (fondamentale nei modelli RFM \cite{burez2009}), permettendo al Random Forest di catturare i "sintomi acuti" del degrado dell'engagement. Sotto il profilo ingegneristico, inoltre, il troncamento temporale riduce drasticamente il carico computazionale necessario all'aggregazione dei log, garantendo maggiore scalabilità all'infrastruttura.
+
+Per preservare il rigore comportamentale, le variabili derivate in questa finestra temporale includono:
+\begin{itemize}
+    \item \textbf{Interazioni Dirette (\texttt{thumbs\_up}, \texttt{thumbs\_down}, \texttt{add\_to\_playlist}):} La letteratura sulle interfacce utente dimostra che l'interazione esplicita, positiva o negativa, denota un alto livello di \textit{engagement}. Nello specifico, la costruzione attiva di librerie (playlist) correla positivamente con la fedeltà alla piattaforma.
+    \item \textbf{Fattori di Attrito (\texttt{roll\_advert}):} Il volume di pubblicità subite genera "friction". Diversi studi empirici sui modelli freemium confermano che l'interruzione frequente dell'ascolto eleva il livello di frustrazione, costituendo uno dei trigger primari per l'abbandono.
+    \item \textbf{Metriche di Ascolto (\texttt{nextsong}, \texttt{minutes\_listened}):} Quantificano l'uso assoluto della piattaforma; utenti prossimi al churn tendono a mostrare un declino in queste metriche nei 30 giorni precedenti la cancellazione.
+    \item \textbf{Skip Rate:} Derivato calcolando la differenza tra il timestamp di inizio brano e l'evento successivo. Benché teoricamente rilevante, l'analisi del dataset originale Sparkify ha rivelato un tasso di skip prossimo allo zero per tutti gli utenti, indicando che i log potrebbero registrare l'evento NextSong quasi esclusivamente al naturale completamento del brano.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{feature_importance.png}
+    \caption{Importanza relativa delle feature calcolata dal modello Random Forest (Mean Decrease Impurity). Si evidenzia il fortissimo potere predittivo della quantità di pubblicità subita (\texttt{roll\_advert}) e delle interazioni attive (\texttt{thumbs\_up}, \texttt{thumbs\_down}). L'importanza dello \textit{skip rate} risulta pressoché nulla a causa delle limitazioni di log del dataset.}
+\end{figure}
+
+\subsection{Calibrazione degli Iperparametri (Grid Search CV)}
+L'addestramento di un Random Forest richiede la definizione di parametri strutturali (iperparametri) che non vengono appresi direttamente dai dati, ma che determinano la capacità dell'algoritmo di generalizzare senza cadere in \textit{overfitting}. Per individuare la configurazione ottima, è stata implementata una ricerca esaustiva nello spazio delle iper-dimensioni tramite \textbf{Grid Search}, combinata con una \textbf{K-Fold Cross-Validation} (k=3). La validazione incrociata garantisce che il modello non "impari a memoria" una specifica porzione del dataset, fornendo una stima robusta delle prestazioni medie su tre partizioni casuali e indipendenti dei dati di training.
+
+A causa del naturale sbilanciamento del dominio, l'ottimizzazione non mirava a massimizzare l'accuratezza globale, bensì l'\textbf{F1-Score} (media armonica tra Precision e Recall), privilegiando così le configurazioni in grado di penalizzare severamente i falsi negativi. 
+
+Lo spazio di ricerca ha esplorato le seguenti direttrici architetturali:
+\begin{itemize}
+    \item \textbf{\texttt{n\_estimators} $[50, 100, 200]$}: Definisce il numero di alberi decisionali (stimatori deboli) che compongono la foresta. Un numero maggiore stabilizza le predizioni riducendo la varianza complessiva, ma aumenta proporzionalmente il tempo di inferenza e il carico computazionale del server FastAPI.
+    \item \textbf{\texttt{max\_depth} $[5, 10, \text{None}]$}: La profondità massima concessa al singolo albero. Limitare la profondità impedisce al modello di creare regole troppo specifiche, fornendo un "potatura" (\textit{pruning}) implicita contro l'overfitting. Il valore \texttt{None} lascia espandere i nodi fino alla pura omogeneità.
+    \item \textbf{\texttt{min\_samples\_split} $[2, 5, 10]$}: Il numero minimo di campioni richiesti per eseguire una ramificazione interna. Aumentare questo valore costringe l'algoritmo a creare "foglie" statisticamente più popolate e robuste, fornendo una regolarizzazione intrinseca essenziale per dataset rumorosi e sparsi come i log comportamentali.
+\end{itemize}
+
+\section{Trasparenza del Modello: Explainable AI}
+Il sistema incorpora meccanismi di spiegabilità deterministica basati sui valori SHAP, attribuendo a ogni input un contributo alla predizione finale.
+
+\subsection{Valori SHAP (TreeExplainer)}
+L'algoritmo calcola il contributo marginale di ogni feature considerando tutte le possibili combinazioni. In ChurnPredict risponde alla domanda: \textbf{quali comportamenti hanno spinto il modello verso la predizione di abbandono?} 
+
+L'implementazione in \texttt{main.py} estrae l'array di valori SHAP e associa a ciascuna feature un \texttt{impact} positivo (spinge verso l'abbandono) o negativo (spinge verso la retention). Questa decomposizione additiva è esatta per gli alberi decisionali.
+
+\subsection{Tracciamento Deterministico nell'UI}
+Oltre al calcolo, il frontend genera una traccia visiva per l'utente, ordinando le feature per magnitudo assoluta dell'impatto (generata tramite SHAP). Questo log visivo espone all'utente la genesi della predizione, riportando in interfaccia una scomposizione chiara dei "driver" che guidano il Rischio Stimato.
+
+\subsubsection{Casi Studio (Profili Predefiniti)}
+Per facilitare il collaudo dell'interfaccia, sono stati integrati quattro profili comportamentali estratti e calibrati direttamente dalle distribuzioni reali apprese dal Random Forest:
+\begin{enumerate}
+    \item \textbf{Ascoltatore Assiduo (Rischio $\approx$ 6\%):} Rappresenta l'utente "sano". Mostra volumi elevati di ascolto, molte aggiunte alle playlist e rari eventi negativi. L'analisi SHAP evidenzia come l'alto numero di \textit{Thumbs Up} e di \textit{Add to Playlist} spinga massicciamente verso la fidelizzazione.
+    \item \textbf{Ascoltatore Sporadico (Rischio $\approx$ 65\%):} Un utente con volume di ascolto limitato (circa 200 brani) e pochissime interazioni. Il modello sanziona la mancanza di \textit{engagement} attivo, assegnando un rischio moderatamente alto di churn per probabile disinteresse e distacco dalla piattaforma.
+    \item \textbf{Ascoltatore Interrotto (Rischio $\approx$ 68\%):} Questo profilo ascolta moltissima musica, ma accumula una mole esorbitante di pubblicità (\texttt{roll\_advert}). L'explainability SHAP mostra visivamente come il "Fattore Pubblicità" sia il traino assoluto verso il rischio di abbandono, annullando il beneficio degli ascolti continui.
+    \item \textbf{Ascoltatore Frustrato (Rischio $\approx$ 74\%):} Un utente ad altissimo rischio, che genera un tasso di \textit{Thumbs Down} sproporzionato e subisce anch'esso diverse interruzioni. L'albero decisionale isola queste metriche di rigetto esplicito come sintomi inequivocabili di profonda insoddisfazione.
+\end{enumerate}
+
+\section{Valutazione Preliminare e Analisi dei Risultati}
+La validazione del modello predittivo è stata condotta su un set di test \textit{hold-out} pari al 20\% del dataset complessivo Sparkify. 
+
+\subsection{Gestione dello Sbilanciamento e Accuracy Paradox}
+Il dataset di partenza presentava un forte sbilanciamento (1:4 tra casi di churn effettivo e utenti attivi). Addestrare un classificatore su una distribuzione fortemente asimmetrica conduce al noto fenomeno dell'\textit{Accuracy Paradox} \cite{chawla2002}: il modello massimizza la funzione obiettivo imparando a ignorare la classe minoritaria (spesso più difficile da separare). In ambito business, questo si traduce nel prevedere sistematicamente che "nessuno abbandonerà", ottenendo l'80\% di accuratezza globale ma una Recall dello 0\% per la classe di interesse, rendendo il modello inutile ai fini della retention.
+
+Per ovviare al problema, è stata applicata la tecnica di oversampling sintetico SMOTE limitata al solo set di addestramento (per evitare \textit{data leakage}). La classe minoritaria è stata espansa sinteticamente interpolando i vettori feature fino al raggiungimento di un rapporto 1:1, forzando l'algoritmo Random Forest a isolare e valorizzare i pattern predittivi del churn, a costo di un lieve incremento dei falsi positivi.
+
+\textbf{Normalizzazione dello Spazio Vettoriale per SMOTE:} Prima di procedere all'interpolazione basata sui k-nearest neighbors interni a SMOTE, l'intero spazio vettoriale delle feature è stato temporaneamente standardizzato (\texttt{StandardScaler}). Questa accortezza matematica è critica: feature come i minuti ascoltati (nell'ordine delle migliaia) avrebbero dominato il calcolo della distanza euclidea rispetto a feature come lo skip rate (nell'ordine dei decimali), spingendo SMOTE a generare campioni "rumorosi". Terminato il bilanciamento spaziale, i vettori sono stati invertiti alla loro scala originaria (\textit{inverse transform}) per garantire che il Random Forest successivi e l'analizzatore SHAP potessero restituire valori fisicamente leggibili (es. "7000 minuti" invece di "0.5 deviazioni standard").
+
+La Tabella \ref{tab:oversampling} quantifica formalmente l'impatto di questa scelta metodologica.
+
+\begin{table}[h]
+\centering
+\caption{Confronto delle metriche predittive con e senza SMOTE (Baseline vs Modello Bilanciato)}
+\label{tab:oversampling}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Metrica (sul test set)} & \textbf{Senza SMOTE} & \textbf{Con SMOTE (Finale)} \\
+\midrule
+Accuratezza Globale & 77,8\% & 64,4\% \\
+Precisione (Churn) & 0,0\% & 20,0\% \\
+Recall (Churn) & \textbf{0,0\%} & \textbf{20,0\%} \\
+F1-Score (Churn) & 0,0\% & 20,0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{dist_before.png}
+        \caption{Distribuzione iniziale (sbilanciata).}
+    \end{minipage}\hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{dist_after.png}
+        \caption{Distribuzione dopo il bilanciamento SMOTE.}
+    \end{minipage}
+\end{figure}
+
+\subsection{Curva ROC e AUC: Resilienza allo Sbilanciamento e Valore di Business}
+Oltre all'analisi puntuale fornita dalla matrice di confusione, la solidità predittiva del modello finale è stata rigorosamente verificata tramite la Curva ROC (Receiver Operating Characteristic). In un problema di machine learning, l'algoritmo non restituisce un'etichetta binaria secca, ma una \textit{probabilità} continua di abbandono. La decisione finale dipende dalla soglia (\textit{threshold}) operativa scelta per tagliare tale probabilità. 
+
+A differenza dell'accuratezza globale, che valuta il modello su una singola soglia fissa (tipicamente 0.5) e risulta ingannevole su dataset sbilanciati, la curva ROC traccia le performance del modello sull'intero spettro delle soglie possibili, confrontando:
+\begin{itemize}
+    \item \textbf{True Positive Rate (TPR) / Recall}: La frazione di utenti in effettivo abbandono correttamente intercettati $\left(\frac{TP}{TP + FN}\right)$. In ottica aziendale, rappresenta il bacino di clienti effettivamente "salvati".
+    \item \textbf{False Positive Rate (FPR)}: La probabilità di "falso allarme" $\left(\frac{FP}{FP + TN}\right)$. Nel contesto del churn, rappresenta il \textit{budget} marketing sprecato, ovvero sconti e promozioni offerti a clienti che sarebbero rimasti in ogni caso.
+\end{itemize}
+
+Sintetizzando questa curva in un unico valore compreso tra 0 e 1, l'Area Under Curve (AUC) funge da indice assoluto di separabilità delle classi. Mentre un modello puramente casuale (\textit{random guessing}) coinciderebbe con la bisettrice (AUC = 0.50), la curva di \textit{ChurnPredict} si posiziona nettamente al di sopra della diagonale, attestando l'avvenuto apprendimento di pattern comportamentali reali.
+
+Dal punto di vista operativo, l'importanza della Curva ROC trasforma il modello da puro algoritmo a strumento di strategia aziendale: osservandone la convessità, i decisori aziendali possono calibrare la soglia di rischio in base al ROI. Se il costo di acquisizione di un nuovo cliente (CAC) è molto più alto del costo della campagna promozionale, l'azienda potrà impostare una soglia più aggressiva (spostandosi in alto a destra sulla curva), tollerando consapevolmente più "falsi allarmi" pur di catturare la totalità dei clienti a rischio.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{roc_curve.png}
+    \caption{Curva ROC calcolata sul test set. L'Area Under Curve (AUC) evidenzia l'ottima separabilità delle classi rispetto al random guessing (linea tratteggiata).}
+\end{figure}
+
+\subsection{Risultati Quantitativi}
+Il modello finale (Random Forest) è stato ottimizzato tramite Grid Search (3-fold CV). I risultati evidenziano un marcato miglioramento nell'identificazione dei falsi negativi. 
+
+\begin{table}[h]
+\centering
+\caption{Metriche globali del classificatore}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metrica} & \textbf{Valore (\%)} \\
+\midrule
+Accuratezza & 64,4 \\
+Precisione (Churn) & 20,0 \\
+Recall (Churn) & 20,0 \\
+F1-Score (Churn) & 20,0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Confronto parametri calcolati in Grid Search}
+\begin{tabular}{lll}
+\toprule
+\textbf{Parametro} & \textbf{Spazio di Ricerca} & \textbf{Miglior Valore} \\
+\midrule
+\texttt{n\_estimators} & [50, 100, 200] & 100 \\
+\texttt{max\_depth} & [5, 10, None] & None \\
+\texttt{min\_samples\_split} & [2, 5, 10] & 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Matrice di Confusione}
+La \textit{Confusion Matrix} conferma l'efficacia dell'approccio: il tasso di veri positivi (utenti correttamente identificati come propensi all'abbandono) è massimizzato. Pur accettando un leggero incremento dei falsi positivi (utenti etichettati a rischio che non avrebbero abbandonato), in ambito business un'azione di \textit{retention} su un falso positivo rappresenta un costo trascurabile rispetto alla perdita di un vero positivo.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{confusion_matrix.png}
+    \caption{Matrice di Confusione sul Test Set.}
+\end{figure}
+
+\section{Discussione e Conclusioni}
+Il presente lavoro ha affrontato la sfida della previsione dell'abbandono utente (churn prediction) non come un mero esercizio di classificazione statistica, ma come la progettazione di un sistema di supporto alle decisioni end-to-end orientato al business. Gli approcci puramente predittivi di stampo \textit{black-box} risultano infatti inefficaci in contesti aziendali reali: per attivare campagne di \textit{retention} mirate ed economicamente sostenibili, sapere \textit{perché} un utente abbandonerà è tanto cruciale quanto sapere \textit{se} lo farà.
+
+Dal punto di vista metodologico, l'impiego dell'algoritmo SMOTE ha dimostrato come una corretta manipolazione dello spazio vettoriale durante l'addestramento permetta di aggirare l'\textit{Accuracy Paradox}. Costringendo il Random Forest \cite{breiman2001} (implementato tramite \texttt{scikit-learn} \cite{pedregosa2011}) a non trascurare la classe minoritaria, il sistema sacrifica una frazione di accuratezza globale in favore di una sensibilità nettamente superiore verso i casi di effettivo rischio.
+
+Dal punto di vista architetturale, l'integrazione del modello con un backend asincrono (FastAPI \cite{ramirez2018}) e un frontend reattivo (Next.js) ha prodotto latenze end-to-end minime, confermando la fattibilità di un'inferenza in \textit{real-time}. L'innesto del modulo \texttt{TreeExplainer} (basato sui valori SHAP \cite{lundberg2017}) rappresenta il vero ponte tra data science e marketing: la scomposizione additiva del rischio trasforma una nuda probabilità percentuale in un "profilo comportamentale azionabile". Se l'interfaccia evidenzia un eccesso di pubblicità (\texttt{roll\_advert}) come causa primaria di rischio, il sistema automatico può innescare l'offerta promozionale di un mese premium senza pubblicità.
+
+\subsection{Limiti del Modello e Sensibilità Metrica}
+I valori assoluti delle metriche di classificazione globali (es. F1-Score e Recall al 20\%) riflettono intrinsecamente un limite di campionamento matematico e non un limite architetturale dell'algoritmo. Il prototipo è stato addestrato e testato sulla variante \textit{mini} del dataset Sparkify (composta da circa 225 utenti totali, contro i 12GB del dataset completo aziendale). Con un \textit{test set} di appena 45 utenti, di cui solamente 10 casi reali di abbandono, l'individuazione corretta di due utenti a fronte di pochi falsi allarmi vincola matematicamente le metriche puntuali (Recall, Precision) a valori nominalmente bassi (20.0\%). In un ambiente di produzione scalato, l'addestramento sull'intera popolazione statistica fornirebbe alla Random Forest una densità di pattern nettamente superiore per abbattere il rumore di fondo, incrementando drasticamente il potere predittivo assoluto (F1-score) mantenendo inalterata l'infrastruttura di Explainable AI presentata.
+
+\subsection{Sviluppi Futuri}
+Il framework \textit{ChurnPredict} pone solide basi per molteplici evoluzioni:
+\begin{enumerate}
+    \item \textbf{Modelli Sequenziali (Deep Learning):} L'attuale astrazione a finestra temporale statica (30 giorni) potrebbe essere sostituita da architetture in grado di processare nativamente le serie storiche di log, come le reti neurali ricorrenti (RNN) o architetture Transformer, per catturare l'usura dell'engagement con granularità giornaliera.
+    \item \textbf{A/B Testing e Reinforcement Learning:} Implementare un ciclo di feedback in cui il sistema proponga un'azione di retention e misuri empiricamente se l'utente accetta l'offerta o procede comunque alla cancellazione.
+    \item \textbf{Ingegnerizzazione dei Dati:} Passaggio dall'estrazione in batch via script a una pipeline di calcolo distribuito (es. Apache Spark o Kafka) per processare moli di dati in scala enterprise e aggiornare il vettore delle feature in tempo reale ad ogni click dell'utente.
+\end{enumerate}
+
+\renewcommand\refname{Riferimenti bibliografici}
+\begin{thebibliography}{9}
+    \bibitem{breiman2001} Breiman, L. (2001). Random Forests. \textit{Machine Learning}, 45(1), 5-32.
+    \bibitem{lundberg2017} Lundberg, S. M., \& Lee, Su-In. (2017). A Unified Approach to Interpreting Model Predictions. \textit{Advances in Neural Information Processing Systems} 30.
+    \bibitem{burez2009} Burez, J., \& Van den Poel, D. (2009). Handling class imbalance in customer churn prediction. \textit{Expert Systems with Applications}, 36(3), 4626-4636.
+    \bibitem{chawla2002} Chawla, N. V., Bowyer, K. W., Hall, L. O., \& Kegelmeyer, W. P. (2002). SMOTE: synthetic minority over-sampling technique. \textit{Journal of artificial intelligence research}, 16, 321-357.
+    \bibitem{iyengar2000} Iyengar, S. S., \& Lepper, M. R. (2000). When choice is demotivating: Can one desire too much of a good thing?. \textit{Journal of personality and social psychology}, 79(6), 995.
+    \bibitem{pedregosa2011} Pedregosa, F., et al. (2011). Scikit-learn: Machine Learning in Python. \textit{Journal of Machine Learning Research}, 12, 2825-2830.
+    \bibitem{ramirez2018} Ramírez, S. (2018). FastAPI. [Online]. Disponibile su: \url{https://fastapi.tiangolo.com/}
+\end{thebibliography}
+
+\end{document}

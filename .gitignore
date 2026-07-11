@@ -1,0 +1,26 @@
+# Node modules e dipendenze frontend
+node_modules/
+.next/
+out/
+build/
+.env*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Modelli ML e output pesanti
+backend/model.pkl
+ml_pipeline/outputs/
+*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Workspace locale
+scratch/
