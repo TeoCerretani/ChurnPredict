@@ -74,4 +74,4 @@ cd frontend
 npm install
 npm run dev
 ```
-L'interfaccia utente sarà accessibile all'indirizzo `http://localhost:3000`.
+L'interfaccia utente sarà accessibile al seguente indirizzo `http://localhost:3000`.
